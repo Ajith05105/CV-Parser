@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+python-multipart
+google-cloud-aiplatform
+google-auth
+gspread
+python-dotenv
+pypdf

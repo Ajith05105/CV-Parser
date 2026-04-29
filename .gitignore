@@ -1,0 +1,8 @@
+service-account.json
+.env
+*.json.key
+.DS_Store
+__pycache__/
+.venv/
+node_modules/
+dist/
