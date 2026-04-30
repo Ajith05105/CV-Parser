@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import os
 from datetime import datetime, timezone
 
@@ -15,10 +16,13 @@ from vertexai.generative_models import GenerationConfig, GenerativeModel
 
 load_dotenv()
 
-PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+PROJECT  = os.getenv("GOOGLE_CLOUD_PROJECT")
 LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
-SA_PATH = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+SA_ENV   = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")  # JSON string or file path
 MAX_BYTES = 5 * 1024 * 1024
 
 HEADERS = [
@@ -51,7 +55,7 @@ If a field has no information in the CV, use an empty string or empty array.
 Never hallucinate or invent information not present in the CV."""
 
 vertex_init(project=PROJECT, location=LOCATION)
-_model = GenerativeModel("gemini-2.5-flash", system_instruction=SYSTEM_PROMPT)
+_model      = GenerativeModel("gemini-2.5-flash", system_instruction=SYSTEM_PROMPT)
 _gen_config = GenerationConfig(temperature=0.1, response_mime_type="application/json")
 
 app = FastAPI()
@@ -63,8 +67,19 @@ app.add_middleware(
 )
 
 
+def _get_credentials() -> Credentials:
+    """Accept SA JSON as an env var string or as a file path."""
+    if not SA_ENV:
+        raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON is not set")
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    if SA_ENV.strip().startswith("{"):
+        info = json.loads(SA_ENV)
+        return Credentials.from_service_account_info(info, scopes=scopes)
+    return Credentials.from_service_account_file(SA_ENV, scopes=scopes)
+
+
 def extract_text(file: UploadFile, data: bytes) -> str:
-    name = (file.filename or "").lower()
+    name  = (file.filename or "").lower()
     ctype = (file.content_type or "").lower()
     if name.endswith(".pdf") or "pdf" in ctype:
         reader = PdfReader(io.BytesIO(data))
@@ -75,11 +90,11 @@ def extract_text(file: UploadFile, data: bytes) -> str:
 
 
 def parse_with_gemini(text: str) -> dict:
-    prompt = f"Parse the following CV:\n\n{text}"
+    prompt   = f"Parse the following CV:\n\n{text}"
     last_err = None
     for _ in range(2):
         resp = _model.generate_content(prompt, generation_config=_gen_config)
-        raw = (resp.text or "").strip()
+        raw  = (resp.text or "").strip()
         if raw.startswith("```"):
             raw = raw.strip("`")
             if raw.lower().startswith("json"):
@@ -91,21 +106,20 @@ def parse_with_gemini(text: str) -> dict:
     raise HTTPException(status_code=500, detail=f"Gemini returned invalid JSON: {last_err}")
 
 
-def write_to_sheet(parsed: dict, style: dict, email: str, github_url: str = "", linkedin_url: str = "", website_url: str = "") -> None:
-    if not (SHEET_ID and SA_PATH):
-        raise RuntimeError("Sheets not configured")
-    creds = Credentials.from_service_account_file(
-        SA_PATH,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"],
-    )
+def write_to_sheet(
+    parsed: dict, style: dict, email: str,
+    github_url: str = "", linkedin_url: str = "", website_url: str = "",
+) -> None:
+    if not SHEET_ID:
+        raise RuntimeError("GOOGLE_SHEET_ID is not set")
+    creds  = _get_credentials()
     client = gspread.authorize(creds)
-    ws = client.open_by_key(SHEET_ID).sheet1
-    first = ws.row_values(1)
-    if first != HEADERS:
-        if not first:
-            ws.append_row(HEADERS, value_input_option="RAW")
-        else:
-            ws.update("A1", [HEADERS])
+    ws     = client.open_by_key(SHEET_ID).sheet1
+    first  = ws.row_values(1)
+    if not first:
+        ws.append_row(HEADERS, value_input_option="RAW")
+    elif first != HEADERS:
+        ws.update("A1", [HEADERS])
     row = [
         datetime.now(timezone.utc).isoformat(),
         parsed.get("name", ""),
@@ -113,9 +127,9 @@ def write_to_sheet(parsed: dict, style: dict, email: str, github_url: str = "", 
         parsed.get("phone", ""),
         parsed.get("summary", ""),
         json.dumps(parsed.get("experience", []), ensure_ascii=False),
-        json.dumps(parsed.get("education", []), ensure_ascii=False),
+        json.dumps(parsed.get("education",  []), ensure_ascii=False),
         ", ".join(parsed.get("skills", []) or []),
-        json.dumps(parsed.get("projects", []), ensure_ascii=False),
+        json.dumps(parsed.get("projects",   []), ensure_ascii=False),
         github_url,
         linkedin_url,
         website_url,
@@ -131,12 +145,12 @@ def write_to_sheet(parsed: dict, style: dict, email: str, github_url: str = "", 
 
 @app.post("/parse")
 async def parse(
-    file: UploadFile = File(...),
-    style: str = Form(...),
-    email: str = Form(...),
-    github_url: str = Form(""),
-    linkedin_url: str = Form(""),
-    website_url: str = Form(""),
+    file:         UploadFile = File(...),
+    style:        str        = Form(...),
+    email:        str        = Form(...),
+    github_url:   str        = Form(""),
+    linkedin_url: str        = Form(""),
+    website_url:  str        = Form(""),
 ):
     data = await file.read()
     if len(data) > MAX_BYTES:
@@ -158,8 +172,8 @@ async def parse(
     try:
         write_to_sheet(parsed, style_obj, email, github_url, linkedin_url, website_url)
     except Exception as e:
-        import traceback; traceback.print_exc()
-        warning = f"Saved parse but failed to write to sheet: {e}"
+        log.exception("Sheet write failed")
+        warning = f"Parsed successfully but failed to write to sheet: {e}"
 
     return {"parsed": parsed, "warning": warning}
 

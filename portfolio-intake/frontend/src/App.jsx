@@ -476,7 +476,7 @@ function SocialLinks({ githubUrl, setGithubUrl, linkedinUrl, setLinkedinUrl, web
       <div>
         <p className="text-sm font-medium text-slate-300">Social Links <span className="ml-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)" }}>Optional</span></p>
         <p className="mt-1 text-xs text-slate-500 leading-relaxed">
-          These are the links that will appear in your portfolio — please make sure they work before submitting. Open each one in your browser to double check.
+          These are the links that will appear in your portfolio please make sure they work before submitting. Open each one in your browser to double check.
         </p>
       </div>
       <div className="space-y-3">
