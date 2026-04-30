@@ -56,6 +56,9 @@ export default function App() {
   const [file,         setFile]         = useState(null);
   const [styleIdx,     setStyleIdx]     = useState(null);
   const [customPrompt, setCustomPrompt] = useState("");
+  const [githubUrl,    setGithubUrl]    = useState("");
+  const [linkedinUrl,  setLinkedinUrl]  = useState("");
+  const [websiteUrl,   setWebsiteUrl]   = useState("");
   const [dragOver,     setDragOver]     = useState(false);
   const [status,       setStatus]       = useState("idle");
   const [error,        setError]        = useState("");
@@ -84,6 +87,9 @@ export default function App() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("email", email);
+      fd.append("github_url",   githubUrl.trim());
+      fd.append("linkedin_url", linkedinUrl.trim());
+      fd.append("website_url",  websiteUrl.trim());
       const { bg, fontClass, icon, tags, summary, ...stylePayload } = selectedStyle;
       if (customPrompt.trim()) stylePayload.custom_prompt = customPrompt.trim();
       fd.append("style", JSON.stringify(stylePayload));
@@ -94,7 +100,7 @@ export default function App() {
         setStatus("error");
         return;
       }
-      setResult(json.parsed || {});
+      setResult({ ...(json.parsed || {}), _githubUrl: githubUrl.trim(), _linkedinUrl: linkedinUrl.trim(), _websiteUrl: websiteUrl.trim() });
       setStatus("success");
     } catch (_) {
       setError("Something went wrong. Please try again or ask a helper.");
@@ -136,6 +142,13 @@ export default function App() {
                   />
                 </Field>
 
+                <SocialLinks
+                  githubUrl={githubUrl}   setGithubUrl={setGithubUrl}
+                  linkedinUrl={linkedinUrl} setLinkedinUrl={setLinkedinUrl}
+                  websiteUrl={websiteUrl}  setWebsiteUrl={setWebsiteUrl}
+                  disabled={status === "loading"}
+                />
+
                 <Field label="Upload your CV" required>
                   <Dropzone
                     file={file} dragOver={dragOver} disabled={status === "loading"}
@@ -150,6 +163,8 @@ export default function App() {
                     <p className="mt-2 text-sm" style={{ color: G.red }}>{error}</p>
                   )}
                 </Field>
+
+                
 
                 <Field
                   label="Pick your portfolio style"
@@ -320,7 +335,7 @@ function ThemeGrid({ selected, onSelect, disabled }) {
           key={t.style_name}
           theme={t}
           selected={selected === i}
-          onClick={() => !disabled && onSelect(i)}
+          onClick={() => !disabled && onSelect(selected === i ? null : i)}
         />
       ))}
     </div>
@@ -447,6 +462,43 @@ function ThemeRow({ theme, selected, onClick }) {
   );
 }
 
+/* ── Social links ─────────────────────────────────────────── */
+function SocialLinks({ githubUrl, setGithubUrl, linkedinUrl, setLinkedinUrl, websiteUrl, setWebsiteUrl, disabled }) {
+  const inputClass = "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none backdrop-blur-sm transition disabled:opacity-50";
+  const focusOn  = e => { e.target.style.borderColor = G.blue; e.target.style.boxShadow = `0 0 0 3px ${G.blue}28`; };
+  const focusOff = e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.boxShadow = ""; };
+
+  return (
+    <div
+      className="rounded-2xl p-5 backdrop-blur-sm space-y-4"
+      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+    >
+      <div>
+        <p className="text-sm font-medium text-slate-300">Social Links <span className="ml-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)" }}>Optional</span></p>
+        <p className="mt-1 text-xs text-slate-500 leading-relaxed">
+          These are the links that will appear in your portfolio — please make sure they work before submitting. Open each one in your browser to double check.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {[
+          { label: "GitHub",           value: githubUrl,   set: setGithubUrl,   placeholder: "https://github.com/yourusername" },
+          { label: "LinkedIn",         value: linkedinUrl, set: setLinkedinUrl, placeholder: "https://linkedin.com/in/yourusername" },
+          { label: "Personal Website", value: websiteUrl,  set: setWebsiteUrl,  placeholder: "https://yourwebsite.com" },
+        ].map(({ label, value, set, placeholder }) => (
+          <div key={label}>
+            <label className="mb-1 block text-xs font-medium text-slate-500">{label}</label>
+            <input
+              type="text" value={value} disabled={disabled} placeholder={placeholder}
+              onChange={e => set(e.target.value)}
+              className={inputClass} onFocus={focusOn} onBlur={focusOff}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Custom style prompt ──────────────────────────────────── */
 function CustomStylePrompt({ value, onChange, disabled, selectedTheme }) {
   const charLimit  = 300;
@@ -528,8 +580,9 @@ function SuccessView({ result, style, customPrompt }) {
     if (!url) return null;
     return url.startsWith("http") ? url : `https://${url}`;
   }
-  const githubHref   = safeHref(r.github);
-  const linkedinHref = safeHref(r.linkedin);
+  const githubHref   = safeHref(r._githubUrl);
+  const linkedinHref = safeHref(r._linkedinUrl);
+  const websiteHref  = safeHref(r._websiteUrl);
 
   return (
     <div className="space-y-5 text-center">
@@ -624,22 +677,14 @@ function SuccessView({ result, style, customPrompt }) {
               {r.projects.map((p, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span className="mt-1.5 h-1.5 w-1.5 flex-none rounded-full" style={{ background: color }} />
-                  {p.url ? (
-                    <a href={safeHref(p.url)} target="_blank" rel="noopener noreferrer"
-                      className="text-sm font-medium underline underline-offset-2 transition-opacity hover:opacity-75"
-                      style={{ color }}>
-                      {p.name}
-                    </a>
-                  ) : (
-                    <span className="text-sm font-medium text-slate-200">{p.name}</span>
-                  )}
+                  <span className="text-sm font-medium text-slate-200">{p.name}</span>
                 </li>
               ))}
             </ul>
           </Section>
         )}
 
-        {(githubHref || linkedinHref) && (
+        {(githubHref || linkedinHref || websiteHref) && (
           <div className="flex flex-wrap gap-4 border-t border-white/5 pt-4 text-sm">
             {githubHref && (
               <a href={githubHref} target="_blank" rel="noopener noreferrer"
@@ -652,7 +697,14 @@ function SuccessView({ result, style, customPrompt }) {
               <a href={linkedinHref} target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 font-medium transition-opacity hover:opacity-75"
                 style={{ color: G.blue }}>
-                <LinkedInIcon className="h-4 w-4" /> LinkedIn
+                LinkedIn
+              </a>
+            )}
+            {websiteHref && (
+              <a href={websiteHref} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 font-medium transition-opacity hover:opacity-75"
+                style={{ color: G.blue }}>
+                Website
               </a>
             )}
           </div>
@@ -711,10 +763,3 @@ function GitHubIcon({ className }) {
   );
 }
 
-function LinkedInIcon({ className }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-    </svg>
-  );
-}

@@ -24,8 +24,8 @@ MAX_BYTES = 5 * 1024 * 1024
 HEADERS = [
     "timestamp", "name", "email", "phone", "summary",
     "experience", "education", "skills", "projects",
-    "github", "linkedin", "style_name", "theme",
-    "primary_color", "font_preference", "status",
+    "github_url", "linkedin_url", "website_url",
+    "style_name", "theme", "primary_color", "font_preference", "custom_prompt", "status",
 ]
 
 SYSTEM_PROMPT = """You are a CV parser. Extract structured information from the provided CV text.
@@ -44,10 +44,8 @@ Use exactly this schema:
   ],
   "skills": ["skill1", "skill2", "skill3"],
   "projects": [
-    {"name": "project name", "description": "what it does and tech used, 1-2 sentences", "url": "project url or empty string"}
-  ],
-  "github": "github profile url or empty string",
-  "linkedin": "linkedin profile url or empty string"
+    {"name": "project name", "description": "what it does and tech used, 1-2 sentences"}
+  ]
 }
 If a field has no information in the CV, use an empty string or empty array.
 Never hallucinate or invent information not present in the CV."""
@@ -93,7 +91,7 @@ def parse_with_gemini(text: str) -> dict:
     raise HTTPException(status_code=500, detail=f"Gemini returned invalid JSON: {last_err}")
 
 
-def write_to_sheet(parsed: dict, style: dict, email: str) -> None:
+def write_to_sheet(parsed: dict, style: dict, email: str, github_url: str = "", linkedin_url: str = "", website_url: str = "") -> None:
     if not (SHEET_ID and SA_PATH):
         raise RuntimeError("Sheets not configured")
     creds = Credentials.from_service_account_file(
@@ -118,12 +116,14 @@ def write_to_sheet(parsed: dict, style: dict, email: str) -> None:
         json.dumps(parsed.get("education", []), ensure_ascii=False),
         ", ".join(parsed.get("skills", []) or []),
         json.dumps(parsed.get("projects", []), ensure_ascii=False),
-        parsed.get("github", ""),
-        parsed.get("linkedin", ""),
+        github_url,
+        linkedin_url,
+        website_url,
         style.get("style_name", ""),
         style.get("theme", ""),
         style.get("primary_color", ""),
         style.get("font_preference", ""),
+        style.get("custom_prompt", ""),
         "pending",
     ]
     ws.append_row(row, value_input_option="RAW")
@@ -134,6 +134,9 @@ async def parse(
     file: UploadFile = File(...),
     style: str = Form(...),
     email: str = Form(...),
+    github_url: str = Form(""),
+    linkedin_url: str = Form(""),
+    website_url: str = Form(""),
 ):
     data = await file.read()
     if len(data) > MAX_BYTES:
@@ -153,7 +156,7 @@ async def parse(
 
     warning = None
     try:
-        write_to_sheet(parsed, style_obj, email)
+        write_to_sheet(parsed, style_obj, email, github_url, linkedin_url, website_url)
     except Exception as e:
         import traceback; traceback.print_exc()
         warning = f"Saved parse but failed to write to sheet: {e}"
