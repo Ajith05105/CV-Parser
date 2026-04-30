@@ -68,14 +68,19 @@ app.add_middleware(
 
 
 def _get_credentials() -> Credentials:
-    """Accept SA JSON as an env var string or as a file path."""
+    """Accept SA JSON as a base64 string, raw JSON string, or file path."""
     if not SA_ENV:
         raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_JSON is not set")
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    if SA_ENV.strip().startswith("{"):
-        info = json.loads(SA_ENV)
-        return Credentials.from_service_account_info(info, scopes=scopes)
-    return Credentials.from_service_account_file(SA_ENV, scopes=scopes)
+    value = SA_ENV.strip()
+    if not value.startswith("{"):
+        import base64
+        try:
+            value = base64.b64decode(value).decode("utf-8")
+        except Exception:
+            return Credentials.from_service_account_file(value, scopes=scopes)
+    info = json.loads(value)
+    return Credentials.from_service_account_info(info, scopes=scopes)
 
 
 def extract_text(file: UploadFile, data: bytes) -> str:
